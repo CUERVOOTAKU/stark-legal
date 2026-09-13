@@ -1,0 +1,59 @@
+name: Build IRON Mobile APK
+
+on:
+  push:
+    branches:
+      - iron-mobile-build-v01
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Decode mobile source
+        run: |
+          mkdir -p mobile-build/src
+          base64 -d mobile-build/iron-mobile-src.b64 > mobile-build/iron-mobile-src.zip
+          unzip -q mobile-build/iron-mobile-src.zip -d mobile-build/src
+
+      - name: Ensure Android SDK 35
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || find "$ANDROID_HOME" -type f -name sdkmanager | head -1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build APK
+        working-directory: mobile-build/src
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Verify APK
+        run: |
+          APK=mobile-build/src/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          cp "$APK" IRON-MESA-Mobile-v0.1.apk
+          sha256sum IRON-MESA-Mobile-v0.1.apk | tee IRON-MESA-Mobile-v0.1.sha256.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: IRON-MESA-Mobile-v0.1
+          path: |
+            IRON-MESA-Mobile-v0.1.apk
+            IRON-MESA-Mobile-v0.1.sha256.txt
+          if-no-files-found: error
+          retention-days: 7
